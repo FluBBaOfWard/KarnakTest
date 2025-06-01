@@ -19,7 +19,7 @@ jobs:
       - name: Archive ROM
         uses: actions/upload-artifact@v4
         with:
-          name: WSCpuTest
+          name: KarnakTest
           path: |
-            WSCpuTest.wsc
-            WSCpuTest.lst
+            KarnakTest.bfb
+            KarnakTest.lst
