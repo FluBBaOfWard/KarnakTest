@@ -1,0 +1,6 @@
+*.ws
+*.wsc
+*.bfb
+*.zip
+*.lst
+build
