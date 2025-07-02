@@ -1,10 +1,10 @@
-# WonderSwan Karnak mapper Test V0.1.0 (20250601)
+# WonderSwan Karnak mapper Test V0.1.0 (20250702)
 
 This is a Karnak mapper test program for Bandai WonderSwan (Color/Crystal) & Benesse PocketChallenge V2.
 
 ## How to use
 
-Load the ROM in an emulator or flash it to a flashcart and put it in your WonderSwan.
+Load the ROM in an emulator or use the bootfriend (bfb) file to test on your WonderSwan.
 The program will go through all the tests and then write "Ok".
 You use the X1-X4 to navigate the menus, A to select an option, B to go back.
 

@@ -197,7 +197,9 @@ main:
 	call writeString
 	mov si, menuTestKarnakStr2
 	call writeString
-	mov si, menuTestLogicStr
+	mov si, menuTestKarnakStr3
+	call writeString
+	mov si, menuTestKarnakStr4
 	call writeString
 
 	; Turn on display
@@ -253,9 +255,9 @@ dontMoveUp:
 	test bl, (PAD_DOWN<<4)
 	jz dontMoveDown
 	add cl, 1
-	cmp cl, 2			; Index of last menu item
+	cmp cl, 4			; Index of last menu item
 	js dontMoveDown
-	mov cl, 2			; same
+	mov cl, 4			; same
 dontMoveDown:
 	mov [es:menuYPos], cl
 
@@ -287,7 +289,9 @@ dontMoveDown:
 	cmp cl, 2
 	jz testKarnakAllValuesWithReset
 	cmp cl, 3
-	jz testLogic
+	jz testKarnakPatternValues
+	cmp cl, 4
+	jz testKarnakRandomValues
 	; No input, restart main loop
 	jmp mainLoop
 ;-----------------------------------------------------------------------------
@@ -298,7 +302,8 @@ dontMoveDown:
 testAll:
 	call runKarnakTestAllValues
 	call runKarnakTestAllValuesWithReset
-;	call runLogic
+	call runKarnakTestPatternValues
+	call runKarnakTestRandomValues
 
 	call checkKeyInput
 	jmp main
@@ -316,20 +321,17 @@ testKarnakAllValuesWithReset:
 	jmp main
 
 ;-----------------------------------------------------------------------------
-testLogic:
-	call runLogic
-
+testKarnakPatternValues:
+	call runKarnakTestPatternValues
 	call checkKeyInput
 	jmp main
 
 ;-----------------------------------------------------------------------------
-runLogic:
-	call testEqu
-	call testAnd8
-	call testNot8
-	call testOr8
-	call testTest8
-	jmp testXor8
+testKarnakRandomValues:
+	call runKarnakTestRandomValues
+	call checkKeyInput
+	jmp main
+
 ;-----------------------------------------------------------------------------
 runKarnakTestAllValues:
 	call resetADPCM
@@ -388,20 +390,24 @@ runKarnakTestAllValuesWithReset:
 	jmp endTestWriteOk
 
 ;-----------------------------------------------------------------------------
+runKarnakTestPatternValues:
+	call resetADPCM
+	call testADPCMPattern
+	jmp endTestWriteOk
+
 ;-----------------------------------------------------------------------------
-resetADPCM:
-	mov al, 0		; Reset timer/adpcm
-	out 0xD6, al
-	mov al, 0x80
-	out 0xD6, al
-	ret
+runKarnakTestRandomValues:
+	call resetADPCM
+	call testADPCMRandom
+	jmp endTestWriteOk
+
 ;-----------------------------------------------------------------------------
 ; Print result from only writing a specified nibble to the decoder.
 ;-----------------------------------------------------------------------------
 testSingleNibbleOnly:
 	mov dl, al
 
-	mov cx, 60
+	mov cx, 80
 testOnlyNibbleLoop:
 	in al, IO_LCD_LINE
 	mov bl, al
@@ -414,6 +420,77 @@ testOnlyNibbleLoop:
 	int 0x10
 
 	loop testOnlyNibbleLoop
+	mov al, 0xA
+	int 0x10
+	call checkKeyInput
+
+	ret
+;-----------------------------------------------------------------------------
+; Test a pattern of nibbles written to the decoder.
+;-----------------------------------------------------------------------------
+testADPCMPattern:
+	mov si, adpcmTestValues
+
+	mov cx, 80
+testPatternLoop:
+	in al, IO_LCD_LINE
+	mov dl, al
+	mov al, [es:si]
+	test cl, 1
+	jz tpNoInc
+	inc si
+tpNoInc:
+	out 0xD8, al
+	call writeSoftADPCM
+	mov bl, dl
+	call waitNextLine
+	in al, 0xD9
+	mov bl, al
+	call readSoftADPCM
+	cmp al, bl
+	jz tpAdpcmOk
+	call printHexB
+	mov al, ','
+	int 0x10
+tpAdpcmOk:
+
+	loop testPatternLoop
+	mov al, 0xA
+	int 0x10
+	call checkKeyInput
+
+	ret
+;-----------------------------------------------------------------------------
+; Test a lot of random nibbles written to the decoder.
+;-----------------------------------------------------------------------------
+testADPCMRandom:
+	call getLFSR1Value
+	mov si, ax
+	mov cx, 0
+testRandomLoop:
+	in al, IO_LCD_LINE
+	mov dl, al
+	test cl, 1
+	jz rndNoInc
+	call getLFSR1Value
+	mov si, ax
+rndNoInc:
+	mov ax, si
+	out 0xD8, al
+	call writeSoftADPCM
+	mov bl, dl
+	call waitNextLine
+	in al, 0xD9
+	mov bl, al
+	call readSoftADPCM
+	cmp al, bl
+	jz rndAdpcmOk
+	call printHexB
+	mov al, ','
+	int 0x10
+rndAdpcmOk:
+
+	loop testRandomLoop
 	mov al, 0xA
 	int 0x10
 	call checkKeyInput
@@ -565,6 +642,14 @@ testOnlyF:
 	jmp testSingleNibbleOnly
 
 ;-----------------------------------------------------------------------------
+; Test all values in the ADPCM table.
+;-----------------------------------------------------------------------------
+testTable:
+	mov si, testingTableStr
+	call writeString
+
+	ret
+;-----------------------------------------------------------------------------
 waitNextLine:
 	in al, IO_LCD_LINE
 	cmp bl, al
@@ -572,626 +657,80 @@ waitNextLine:
 	ret
 
 ;-----------------------------------------------------------------------------
-; Test equality by CMP, SUB & XOR of all byte/word values.
+; Reset ADPCM chip
 ;-----------------------------------------------------------------------------
-testEqu:
-	mov si, testingEquStr
-	call writeString
-	mov si, test8x8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 1
-
-	mov cl, 0
-testEqu8Loop:
-	mov [es:inputVal1], cl
-	mov [es:inputVal2], cl
-	mov al, cl
-	cmp al, cl
-	jnz equ8Failed
-	sub al, cl
-	jnz equ8Failed
-	mov al, cl
-	xor al, cl
-	jnz equ8Failed
-continueEqu8:
-	inc cl
-	jnz testEqu8Loop
-
-	mov cl, 0
-testNeq8Loop:
-	mov [es:inputVal1], cl
-	mov [es:inputVal2], cl
-	mov al, cl
-	inc al
-	cmp al, cl
-	jz neq8Failed
-	sub al, cl
-	jz neq8Failed
-	mov al, cl
-	inc al
-	xor al, cl
-	jz neq8Failed
-continueNeq8:
-	inc cl
-	jnz testNeq8Loop
-
-	hlt
-	mov al, 10
-	int 0x10
-	mov si, test16x16InputStr
-	call writeString
-	mov byte [es:isTesting], 3
-
-	mov cx, 0
-testEqu16Loop:
-	mov [es:inputVal1], cx
-	mov [es:inputVal2], cx
-	mov ax, cx
-	cmp ax, cx
-	jnz equ16Failed
-	sub ax, cx
-	jnz equ16Failed
-	mov ax, cx
-	xor ax, cx
-	jnz equ16Failed
-continueEqu16:
-	inc cx
-	jnz testEqu16Loop
-
-	mov cx, 0
-testNeq16Loop:
-	mov [es:inputVal1], cx
-	mov [es:inputVal2], cx
-	mov ax, cx
-	inc ax
-	cmp ax, cx
-	jz neq16Failed
-	sub ax, cx
-	jz neq16Failed
-	mov ax, cx
-	inc ax
-	xor ax, cx
-	jz neq16Failed
-continueNeq16:
-	inc cx
-	jnz testNeq16Loop
-	jmp endTestWriteOk
-
-equ8Failed:
-	call printFailedResult
-	call checkKeyInput
-	xor al, 0
-	jnz continueEqu8
-	ret
-neq8Failed:
-	call printFailedResult
-	call checkKeyInput
-	xor al, 0
-	jnz continueNeq8
-	ret
-equ16Failed:
-	call printFailedResult
-	call checkKeyInput
-	xor al, 0
-	jnz continueEqu16
-	ret
-neq16Failed:
-	call printFailedResult
-	call checkKeyInput
-	xor al, 0
-	jnz continueNeq16
-	ret
-
+resetADPCM:
+	mov al, 0		; Reset timer/adpcm
+	out 0xD6, al
+	mov al, 0x80
+	out 0xD6, al
+;	ret
 ;-----------------------------------------------------------------------------
-; Test logical AND of all byte values.
+; Reset soft ADPCM
 ;-----------------------------------------------------------------------------
-testAnd8:
-	mov si, testingAnd8Str
-	call writeString
-	mov si, test8x8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 1
-
-	xor cx, cx
-	mov [es:expectedResult1], cx
-testAnd8Loop:
-	mov [es:inputVal1], cl
-	mov [es:inputVal2], ch
-	mov ax, cx
-	not ax
-	or al, ah
-	not al
-	mov [es:expectedResult1], al
-	lea bx, PZSTable
-	xlat
-	mov ah, 0xf2
-	or al, 0x02
-	mov [es:expectedFlags], ax
-	call testAnd8Single
-	xor al, 0
-	jnz stopAnd8Test
-continueAnd8:
-	inc cx
-	jnz testAnd8Loop
-	jmp endTestWriteOk
-
-stopAnd8Test:
-	call checkKeyInput
-	xor al, 0
-	jnz continueAnd8
+resetSoftADPCM:
+	xor al, al
+	mov [es:adpcmIdx], al
+	mov [es:adpcmOdd], al
+	mov ax, 0x4000
+	mov [es:adpcmAcc], ax
 	ret
-
 ;-----------------------------------------------------------------------------
-testAnd8Single:
-	push bx
+; Write ADPCM value to software version.
+;-----------------------------------------------------------------------------
+writeSoftADPCM:
 	push cx
-
-	pushf
-	pop ax
-	and ax, 0x8700
-	push ax
-	mov [es:inputFlags], ax
-
-	xor ah, ah
-	mov al, [es:inputVal1]
-	mov bl, [es:inputVal2]
-	popf
-	and al, bl
-	pushf
-
-	mov [es:testedResult1], al
-	pop bx
-	mov [es:testedFlags], bx
-	mov cx, [es:expectedResult1]
-	xor ax, cx
-	jnz and8Failed
-	mov cx, [es:expectedFlags]
-	xor bx, cx
-	jnz and8Failed
-
-	pushf
-	pop ax
-	or ax, 0x78FF
-	push ax
-	mov [es:inputFlags], ax
-
-	xor ah, ah
-	mov al, [es:inputVal1]
-	mov cl, [es:inputVal2]
-	popf
-	and al, cl
-	pushf
-
-	mov [es:testedResult1], ax
-	pop bx
-	mov [es:testedFlags], bx
-	mov cx, [es:expectedResult1]
-	xor ax, cx
-	jnz and8Failed
-	mov cx, [es:expectedFlags]
-	xor bx, cx
-	jnz and8Failed
-
-	xor ax, ax
-	pop cx
-	pop bx
-	ret
-
-and8Failed:
-	call printFailedResult
-	mov ax, 1
-	pop cx
-	pop bx
-	ret
-
-;-----------------------------------------------------------------------------
-; Test logical NOT of all byte values.
-;-----------------------------------------------------------------------------
-testNot8:
-	mov si, testingNot8Str
-	call writeString
-	mov si, test8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 4
-
-	xor cx, cx
-	mov [es:expectedResult1], cx
-	dec ch
-testNot8Loop:
-	mov [es:inputVal1], cl
-	mov [es:expectedResult1], ch
-	call testNot8Single
-	xor al, 0
-	jnz stopNot8Test
-continueNot8:
-	dec ch
-	inc cl
-	jnz testNot8Loop
-	jmp endTestWriteOk
-
-stopNot8Test:
-	call checkKeyInput
-	xor al, 0
-	jnz continueNot8
-	ret
-
-;-----------------------------------------------------------------------------
-testNot8Single:
-	push bx
-	push cx
-
-	pushf
-	pop ax
-	and ax, 0x8700
-	push ax
-	mov [es:inputFlags], ax
-	mov ax, 0xF202
-	mov [es:expectedFlags], ax
-
-	xor ah, ah
-	mov al, [es:inputVal1]
-	popf
-	not al
-	pushf
-
-	mov [es:testedResult1], al
-	pop bx
-	mov [es:testedFlags], bx
-	mov cx, [es:expectedResult1]
-	xor ax, cx
-	jnz not8Failed
-	mov cx, [es:expectedFlags]
-	xor bx, cx
-	jnz not8Failed
-
-	pushf
-	pop ax
-	or ax, 0x78FF
-	push ax
-	mov [es:inputFlags], ax
-	mov ax, 0xFAD7
-	mov [es:expectedFlags], ax
-
+	push si
+	mov bl, [es:adpcmOdd]
+	xor bl, 1
+	mov [es:adpcmOdd], bl
+	jz notOdd
+	shr al, 4
+notOdd:
 	xor bh, bh
-	mov bl, [es:inputVal1]
-	popf
-	not bl
-	pushf
-
-	mov [es:testedResult1], bx
-	pop ax
-	mov [es:testedFlags], ax
-	mov cx, [es:expectedResult1]
-	xor bx, cx
-	jnz not8Failed
-	mov cx, [es:expectedFlags]
-	xor ax, cx
-	jnz not8Failed
-
-	xor ax, ax
-	pop cx
-	pop bx
-	ret
-
-not8Failed:
-	call printFailedResult
-	mov ax, 1
-	pop cx
-	pop bx
-	ret
-
-;-----------------------------------------------------------------------------
-; Test logical OR of all byte values.
-;-----------------------------------------------------------------------------
-testOr8:
-	mov si, testingOr8Str
-	call writeString
-	mov si, test8x8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 1
-
-	mov cx, 0
-	mov [es:expectedResult1], cx
-testOr8Loop:
-	mov [es:inputVal1], cl
-	mov [es:inputVal2], ch
-	mov ax, cx
-	not ax
-	and al, ah
-	not al
-	mov [es:expectedResult1], al
-	lea bx, PZSTable
-	xlat
-	mov ah, 0xf2
-	or al, 0x02
-	mov [es:expectedFlags], ax
-	call testOr8Single
-	xor al, 0
-	jnz stopOr8Test
-continueOr8:
-	inc cx
-	jnz testOr8Loop
-	jmp endTestWriteOk
-
-stopOr8Test:
-	call checkKeyInput
-	xor al, 0
-	jnz continueOr8
-	ret
-
-;-----------------------------------------------------------------------------
-testOr8Single:
-	push bx
-	push cx
-
-	pushf
-	pop ax
-	and ax, 0x8700
-	push ax
-	mov [es:inputFlags], ax
-
-	xor ah, ah
-	mov al, [es:inputVal1]
-	mov bl, [es:inputVal2]
-	popf
-	or al, bl
-	pushf
-
-	mov [es:testedResult1], al
-	pop bx
-	mov [es:testedFlags], bx
-	mov cx, [es:expectedResult1]
-	xor ax, cx
-	jnz or8Failed
-	mov cx, [es:expectedFlags]
-	xor bx, cx
-	jnz or8Failed
-
-	pushf
-	pop ax
-	or ax, 0x78FF
-	push ax
-	mov [es:inputFlags], ax
-
-	xor ah, ah
-	mov al, [es:inputVal1]
-	mov cl, [es:inputVal2]
-	popf
-	or al, cl
-	pushf
-
-	mov [es:testedResult1], ax
-	pop bx
-	mov [es:testedFlags], bx
-	mov cx, [es:expectedResult1]
-	xor ax, cx
-	jnz or8Failed
-	mov cx, [es:expectedFlags]
-	xor bx, cx
-	jnz or8Failed
-
-	xor ax, ax
-	pop cx
-	pop bx
-	ret
-
-or8Failed:
-	call printFailedResult
-	mov ax, 1
-	pop cx
-	pop bx
-	ret
-
-;-----------------------------------------------------------------------------
-; Test logical TEST of all byte values.
-;-----------------------------------------------------------------------------
-testTest8:
-	mov si, testingTest8Str
-	call writeString
-	mov si, test8x8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 1
-
+	mov bl, [es:adpcmIdx]
+	shl bl, 3
+	mov si, bx
+	mov bl, al
+	and bl, 7
 	xor cx, cx
-	mov [es:expectedResult1], cx
-testTest8Loop:
-	mov [es:inputVal1], cl
-	mov [es:expectedResult1], cl
-	mov [es:inputVal2], ch
-	mov al, cl
-	and al, ch
-	lea bx, PZSTable
-	xlat
-	mov ah, 0xf2
-	or al, 0x02
-	mov [es:expectedFlags], ax
-	call testTest8Single
-	xor al, 0
-	jnz stopTest8Test
-continueTest8:
-	inc cx
-	jnz testTest8Loop
-	jmp endTestWriteOk
+	mov cl, [es:upd775xStep + bx + si]
+	test al,8
+	jz notSign
+	neg cx
+notSign:
+	shl cx, 6
+	mov bl, [es:upd775xIndexShift + bx]
+	mov al, [es:adpcmIdx]
+	add al, bl
+	jns notUnder
+	mov al, 0
+notUnder:
+	cmp al, 0xF
+	jc notOver
+	mov al, 0xF
+notOver:
+	mov [es:adpcmIdx], al
 
-stopTest8Test:
-	call checkKeyInput
-	xor al, 0
-	jnz continueTest8
-	ret
+	mov ax, [es:adpcmAcc]
+	add ax, cx
+	mov [es:adpcmAcc], ax
 
-;-----------------------------------------------------------------------------
-testTest8Single:
-	push bx
-	push cx
-
-	pushf
-	pop ax
-	and ax, 0x8700
-	push ax
-	mov [es:inputFlags], ax
-
-	xor ah, ah
-	mov al, [es:inputVal1]
-	mov bl, [es:inputVal2]
-	popf
-	test al, bl
-	pushf
-
-	mov [es:testedResult1], al
-	pop bx
-	mov [es:testedFlags], bx
-	mov cx, [es:expectedResult1]
-	xor ax, cx
-	jnz test8Failed
-	mov cx, [es:expectedFlags]
-	xor bx, cx
-	jnz test8Failed
-
-	pushf
-	pop ax
-	or ax, 0x78FF
-	push ax
-	mov [es:inputFlags], ax
-
-	xor ah, ah
-	mov al, [es:inputVal1]
-	mov cl, [es:inputVal2]
-	popf
-	test al, cl
-	pushf
-
-	mov [es:testedResult1], al
-	pop bx
-	mov [es:testedFlags], bx
-	mov cx, [es:expectedResult1]
-	xor ax, cx
-	jnz test8Failed
-	mov cx, [es:expectedFlags]
-	xor bx, cx
-	jnz test8Failed
-
-	xor ax, ax
+	pop si
 	pop cx
-	pop bx
 	ret
-
-test8Failed:
-	call printFailedResult
-	mov ax, 1
-	pop cx
-	pop bx
-	ret
-
 ;-----------------------------------------------------------------------------
-; Test logical XOR of all byte values.
+; Read PCM value from software version. Return val in al.
 ;-----------------------------------------------------------------------------
-testXor8:
-	mov si, testingXor8Str
-	call writeString
-	mov si, test8x8InputStr
-	call writeString
-
-	mov byte [es:isTesting], 1
-
-	mov cx, 0
-	mov [es:expectedResult1], cx
-testXor8Loop:
-	mov [es:inputVal1], cl
-	mov [es:inputVal2], ch
-	mov ax, cx
-	and al, ah
-	mov bl, cl
-	or bl, ch
-	not al
-	and al, bl
-	mov [es:expectedResult1], al
-	lea bx, PZSTable
-	xlat
-	mov ah, 0xf2
-	or al, 0x02
-	mov [es:expectedFlags], ax
-	call testXor8Single
-	cmp al, 0
-	jnz stopXor8Test
-continueXor8:
-	inc cx
-	jnz testXor8Loop
-	jmp endTestWriteOk
-
-stopXor8Test:
-	call checkKeyInput
-	cmp al, 0
-	jnz continueXor8
+readSoftADPCM:
+	mov ax, [es:adpcmAcc]
+	sar ax, 7
+	js saturateADPCM
 	ret
-
-;-----------------------------------------------------------------------------
-testXor8Single:
-	push bx
-	push cx
-
-	pushf
-	pop ax
-	and ax, 0x8700
-	push ax
-	mov [es:inputFlags], ax
-
-	mov ah, 0
-	mov al, [es:inputVal1]
-	mov bl, [es:inputVal2]
-	popf
-	xor al, bl
-	pushf
-
-	mov [es:testedResult1], al
-	pop bx
-	mov [es:testedFlags], bx
-	mov cx, [es:expectedResult1]
-	cmp ax, cx
-	jnz xor8Failed
-	mov cx, [es:expectedFlags]
-	cmp bx, cx
-	jnz xor8Failed
-
-	pushf
-	pop ax
-	or ax, 0x78FF
-	push ax
-	mov [es:inputFlags], ax
-
-	mov ah, 0
-	mov al, [es:inputVal1]
-	mov cl, [es:inputVal2]
-	popf
-	xor al, cl
-	pushf
-
-	mov [es:testedResult1], ax
-	pop bx
-	mov [es:testedFlags], bx
-	mov cx, [es:expectedResult1]
-	cmp ax, cx
-	jnz xor8Failed
-	mov cx, [es:expectedFlags]
-	cmp bx, cx
-	jnz xor8Failed
-
-	mov ax, 0
-	pop cx
-	pop bx
+saturateADPCM:
+	xor al, 0x80
+	sar al, 7
 	ret
-
-xor8Failed:
-	call printFailedResult
-	mov ax, 1
-	pop cx
-	pop bx
-	ret
-
 ;-----------------------------------------------------------------------------
 ; Wait for input, A continue, B cancel.
 ;-----------------------------------------------------------------------------
@@ -1741,23 +1280,25 @@ endOutput:
 
 	align 2
 
-PZSTable:
-	db PSR_Z|PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0, 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P
-	db 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P, PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0
-	db 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P, PSR_P, 0, 0 ,PSR_P, 0, PSR_P, PSR_P, 0
-	db PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0, 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P
-	db 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P, PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0
-	db PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0, 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P
-	db PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0, 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P
-	db 0, PSR_P, PSR_P, 0, PSR_P, 0, 0, PSR_P, PSR_P, 0, 0, PSR_P, 0, PSR_P, PSR_P, 0
-	db PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S
-	db PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S
-	db PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S
-	db PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S
-	db PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S
-	db PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S
-	db PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S
-	db PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S, PSR_S+PSR_P, PSR_S, PSR_S+PSR_P, PSR_S, PSR_S, PSR_P+PSR_S
+upd775xStep:
+	db  0,  0,  1,  2,  3,   5,   7,  10
+	db  0,  1,  2,  3,  4,   6,   8,  13
+	db  0,  1,  2,  4,  5,   7,  10,  15
+	db  0,  1,  3,  4,  6,   9,  13,  19
+	db  0,  2,  3,  5,  8,  11,  15,  23
+	db  0,  2,  4,  7, 10,  14,  19,  29
+	db  0,  3,  5,  8, 12,  16,  22,  33
+	db  1,  4,  7, 10, 15,  20,  29,  43
+	db  1,  4,  8, 13, 18,  25,  35,  53
+	db  1,  6, 10, 16, 22,  31,  43,  64
+	db  2,  7, 12, 19, 27,  37,  51,  76
+	db  2,  9, 16, 24, 34,  46,  64,  96
+	db  3, 11, 19, 29, 41,  57,  79, 117
+	db  4, 13, 24, 36, 50,  69,  96, 143
+	db  4, 16, 29, 44, 62,  85, 118, 175
+	db  6, 20, 36, 54, 76, 104, 144, 214
+upd775xIndexShift:
+	db -1, -1, 0, 0, 1, 2, 2, 3
 
 FontTilePalette:
 	dw 0xFFF, 0x000
@@ -1824,16 +1365,21 @@ pcv2rev:
 pcv2pcc:
 	db 0x0, 0x8, 0x0, 0x4, 0x8, 0xC, 0x8, 0xC, 0x0, 0x4, 0x0, 0x4, 0x8, 0xC, 0x8, 0xC
 
+adpcmTestValues:
+	db 0x01, 0x23, 0x40, 0x50, 0x06, 0x00, 0x70, 0x01
+	db 0x42, 0x43, 0x45, 0x0
+
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db "  WS Karnak Tester 20250531",10, 10 , 0
+headLineStr: db "  WS Karnak Tester 20250702",10, 10 , 0
 
 menuTestAllStr: db "  Test All.",10 , 0
 menuTestKarnakStr: db "  Test Karnak All Values.",10 , 0
-menuTestKarnakStr2: db "  Test Karnak All Val/reset.",10 , 0
-menuTestLogicStr: db "  Test Logic.",10 , 0
-menuTestArithmeticStr: db "  Test Arithmetic.",10 , 0
+menuTestKarnakStr2: db "  Test Karnak All Val/reset",10 , 0
+menuTestKarnakStr3: db "  Test Karnak Table Values.",10 , 0
+menuTestKarnakStr4: db "  Test Karnak RND values.",10 , 0
+menuTestKarnakStr5: db "  Test Karnak Saturation.",10 , 0
 
 testingOnly0Str: db "Write only 0x0", 10, 0
 testingOnly1Str: db "Write only 0x1", 10, 0
@@ -1851,17 +1397,7 @@ testingOnlyCStr: db "Write only 0xC", 10, 0
 testingOnlyDStr: db "Write only 0xD", 10, 0
 testingOnlyEStr: db "Write only 0xE", 10, 0
 testingOnlyFStr: db "Write only 0xF", 10, 0
-testingEquStr: db "Equal by CMP, SUB & XOR", 10, 0
-testingAnd8Str: db "Logical AND bytes", 10, 0
-testingAnd16Str: db "Logical AND words", 10, 0
-testingOr8Str: db "Logical OR bytes", 10, 0
-testingOr16Str: db "Logical OR words", 10, 0
-testingTest8Str: db "Logical TEST bytes", 10, 0
-testingTest16Str: db "Logical TEST words", 10, 0
-testingXor8Str: db "Logical XOR bytes", 10, 0
-testingXor16Str: db "Logical XOR words", 10, 0
-testingNot8Str: db "Logical NOT bytes", 10, 0
-testingNot16Str: db "Logical NOT words", 10, 0
+testingTableStr: db "Checking Table", 10, 0
 
 
 test8InputStr: db "Testing Input: 0x00", 0
@@ -1901,6 +1437,10 @@ menuXPos: resb 1
 menuYPos: resb 1
 keysHeld: resb 1
 keysDown: resb 1
+
+adpcmAcc: resw 1
+adpcmOdd: resb 1
+adpcmIdx: resb 1
 
 lfsr1: resw 1
 lfsr2: resw 1
