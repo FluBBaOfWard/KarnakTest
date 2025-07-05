@@ -1,4 +1,4 @@
-# WonderSwan Karnak mapper Test V0.1.0 (20250702)
+# WonderSwan Karnak mapper Test V0.1.0 (20250705)
 
 This is a Karnak mapper test program for Bandai WonderSwan (Color/Crystal) & Benesse PocketChallenge V2.
 
@@ -15,6 +15,25 @@ I use nasm <https://nasm.us/> by running "nasm -f bin -o KarnakTest.bfb KarnakTe
 ## Controls
 
 Use WS X1-X4 to navigate the menus. A to select/continue failed test, B to go back/skip failed test.
+
+## How it works
+
+ADPCM values (nybbles) are written to IO address 0xD8, decoded PCM samples can
+then be read from 0xD9. Every other write uses the top/bottom nybble, so you
+write the same byte twice and read samples between each write. Reading IO
+address 0xD8 returns the last written value. Writing to 0xD9 doesn't seem to
+do anything.
+
+The actual ADPCM algorithm is the same as the NEC upd775x chips (but without
+any format/headers handling). Though one thing I haven't seen documented (or it
+is specific to the Karnak chip) is the saturation handling, the accumulator is
+10bits with the middle 8bits output except when values are 0x200-0x2FF they are
+output as 0xFF and when values are 0x300-0x3FF they are output as 0x00, the
+accumulator is not saturated only the output.
+
+Writing IO address 0xD6 controls a timer and also resets the ADPCM state (at
+least when turned off/on), after an ADPCM reset the output value is 0x80
+(accumulator is 0x100) and the top nybble is decoded first.
 
 ## Credits
 
