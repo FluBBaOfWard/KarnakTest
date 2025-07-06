@@ -1,4 +1,4 @@
-# WonderSwan Karnak mapper Test V0.1.0 (20250705)
+# WonderSwan Karnak mapper Test V0.1.0 (20250706)
 
 This is a Karnak mapper test program for Bandai WonderSwan (Color/Crystal) & Benesse PocketChallenge V2.
 
@@ -15,6 +15,13 @@ I use nasm <https://nasm.us/> by running "nasm -f bin -o KarnakTest.bfb KarnakTe
 ## Controls
 
 Use WS X1-X4 to navigate the menus. A to select/continue failed test, B to go back/skip failed test.
+
+## The Tests
+
+If a test fails it will write out the ADPCM value written and the current index
+(row) plus the previous value and index, also the tested PCM value and expected
+PCM value. Continuing the test will fail all remaining tests since the results
+are dependant on previous results.
 
 ## How it works
 

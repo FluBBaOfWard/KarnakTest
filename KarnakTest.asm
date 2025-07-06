@@ -449,12 +449,16 @@ tpNoInc:
 	call readSoftADPCM
 	cmp al, bl
 	jz tpAdpcmOk
-	call printHexB
-	mov al, ','
-	int 0x10
+	mov [es:testedResult1], al
+	mov [es:expectedResult1], bl
+	call printFailedResult
+	call checkKeyInput
+	xor al, 0
+	jz tpAdpcmStop
 tpAdpcmOk:
 
 	loop testPatternLoop
+tpAdpcmStop:
 	mov al, 0xA
 	int 0x10
 	call checkKeyInput
@@ -485,12 +489,16 @@ rndNoInc:
 	call readSoftADPCM
 	cmp al, bl
 	jz rndAdpcmOk
-	call printHexB
-	mov al, ','
-	int 0x10
+	mov [es:testedResult1], al
+	mov [es:expectedResult1], bl
+	call printFailedResult
+	call checkKeyInput
+	xor al, 0
+	jz rndAdpcmStop
 rndAdpcmOk:
 
 	loop testRandomLoop
+rndAdpcmStop:
 	mov al, 0xA
 	int 0x10
 	call checkKeyInput
@@ -681,12 +689,18 @@ resetSoftADPCM:
 writeSoftADPCM:
 	push cx
 	push si
+	mov bl, [es:inputVal1]
+	mov [es:inputVal2], bl
+	mov bl, [es:adpcmIdx]
+	mov [es:adpcmIdxOld], bl
 	mov bl, [es:adpcmOdd]
 	xor bl, 1
 	mov [es:adpcmOdd], bl
 	jz notOdd
 	shr al, 4
 notOdd:
+	and al, 0xF
+	mov [es:inputVal1], al
 	xor bh, bh
 	mov bl, [es:adpcmIdx]
 	shl bl, 3
@@ -791,6 +805,56 @@ noTaps3:
 	mov [es:lfsr3+2], dx
 	ret
 ;-----------------------------------------------------------------------------
+; Print expected result and tested result.
+;-----------------------------------------------------------------------------
+printFailedResult:
+	push cx
+	push si
+	hlt						; Wait for VBlank
+	mov byte [es:isTesting], 0
+	mov al, 10
+	int 0x10
+
+	mov si, inputStr
+	call writeString
+	mov ax, [es:inputVal1]
+	call printHexB
+	mov si, indexStr
+	call writeString
+	mov ax, [es:adpcmIdx]
+	call printHexB
+	mov al, 10
+	int 0x10
+
+	mov si, inputPrevStr
+	call writeString
+	mov ax, [es:inputVal2]
+	call printHexB
+	mov si, indexStr
+	call writeString
+	mov ax, [es:adpcmIdxOld]
+	call printHexB
+	mov al, 10
+	int 0x10
+
+	mov si, expectedStr
+	call writeString
+	mov ax, [es:expectedResult1]
+	call printHexB
+	mov al, 10
+	int 0x10
+
+	mov si, testedStr
+	call writeString
+	mov ax, [es:testedResult1]
+	call printHexB
+	mov al, 10
+	int 0x10
+
+	pop si
+	pop cx
+	ret
+;-----------------------------------------------------------------------------
 ; Print expected result and flags plus tested result and flags.
 ;-----------------------------------------------------------------------------
 printFailedResult8:
@@ -856,7 +920,7 @@ printFailedResult8:
 ;-----------------------------------------------------------------------------
 ; Print expected result and flags plus tested result and flags.
 ;-----------------------------------------------------------------------------
-printFailedResult:
+printFailedResult16:
 	hlt						; Wait for VBlank
 	mov byte [es:isTesting], 0
 	mov al, 10
@@ -1394,7 +1458,7 @@ adpcmTestValues:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db "  WS Karnak Tester 20250705",10, 10 , 0
+headLineStr: db "  WS Karnak Tester 20250706",10, 10 , 0
 
 menuTestAllStr: db "  Test All.",10 , 0
 menuTestKarnakStr: db "  Test Karnak All Values.",10 , 0
@@ -1428,10 +1492,12 @@ test8x8InputStr: db "Testing Input: 0x00, 0x00", 0
 test16x8InputStr: db "Testing Input: 0x0000, 0x00", 0
 test16x16InputStr: db "Testing Inp: 0x0000, 0x0000", 0
 test32x16InputStr: db "Testing: 0x00000000, 0x0000", 0
-inputStr: db "Input:0x", 0
+indexStr: db " Index: 0x", 0
+inputStr: db "Input: 0x", 0
+inputPrevStr: db "PrevInput: 0x", 0
 input32Str: db "I:0x", 0
-expectedStr: db "Expected Result:", 10, 0
-testedStr: db "Tested Result:", 10, 0
+expectedStr: db "Expected Result: 0x", 0
+testedStr: db "Tested Result: 0x", 0
 valueStr: db "Value:0x",0
 flagsStr: db " Flags:0x",0
 okStr: db "Ok!", 10, 0
@@ -1463,6 +1529,9 @@ keysDown: resb 1
 adpcmAcc: resw 1
 adpcmOdd: resb 1
 adpcmIdx: resb 1
+
+adpcmIdxOld: resb 1
+adpcmVal: resb 1
 
 lfsr1: resw 1
 lfsr2: resw 1
