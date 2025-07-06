@@ -191,6 +191,8 @@ main:
 	mov si, headLineStr
 	call writeString
 
+	mov si, menuDumpIOPortsStr
+	call writeString
 	mov si, menuTestAllStr
 	call writeString
 	mov si, menuTestKarnakStr
@@ -255,9 +257,9 @@ dontMoveUp:
 	test bl, (PAD_DOWN<<4)
 	jz dontMoveDown
 	add cl, 1
-	cmp cl, 4			; Index of last menu item
+	cmp cl, 5			; Index of last menu item
 	js dontMoveDown
-	mov cl, 4			; same
+	mov cl, 5			; same
 dontMoveDown:
 	mov [es:menuYPos], cl
 
@@ -283,14 +285,16 @@ dontMoveDown:
 	call clearScreen
 
 	cmp cl, 0
-	jz testAll
+	jz runDumpIOPorts
 	cmp cl, 1
-	jz testKarnakAllValues
+	jz testAll
 	cmp cl, 2
-	jz testKarnakAllValuesWithReset
+	jz testKarnakAllValues
 	cmp cl, 3
-	jz testKarnakPatternValues
+	jz testKarnakAllValuesWithReset
 	cmp cl, 4
+	jz testKarnakPatternValues
+	cmp cl, 5
 	jz testKarnakRandomValues
 	; No input, restart main loop
 	jmp mainLoop
@@ -298,6 +302,12 @@ dontMoveDown:
 ;
 ; END main area
 ;
+;-----------------------------------------------------------------------------
+runDumpIOPorts:
+	call dumpIOPorts
+	call checkKeyInput
+	jmp main
+
 ;-----------------------------------------------------------------------------
 testAll:
 	call runKarnakTestAllValues
@@ -402,6 +412,37 @@ runKarnakTestRandomValues:
 	jmp endTestWriteOk
 
 ;-----------------------------------------------------------------------------
+; Print values of all IO ports.
+;-----------------------------------------------------------------------------
+dumpIOPorts:
+	mov al, 0		; Reset timer/adpcm
+	out 0xD6, al
+
+	mov bp, 0xC0
+.b1:
+	mov ax, bp
+	call printHexB
+	mov al, ':'
+	int 0x10
+.b0:
+	mov al, ' '
+	int 0x10
+	mov dx, bp
+	in al, dx
+	call printHexB
+	add bp, 1
+	mov al, 0xAA
+	out 0xC7, al
+	test bp, 7
+	jnz .b0
+	mov al, 10
+	int 0x10
+	test bp, 0xFF
+	jnz .b1
+
+	ret
+
+;-----------------------------------------------------------------------------
 ; Print result from only writing a specified nibble to the decoder.
 ;-----------------------------------------------------------------------------
 testSingleNibbleOnly:
@@ -429,10 +470,12 @@ testOnlyNibbleLoop:
 ; Test a pattern of nibbles written to the decoder.
 ;-----------------------------------------------------------------------------
 testADPCMPattern:
+	mov byte [es:isTesting], 7
 	mov si, adpcmTestValues
 
 	mov cx, 16*24		; was 24 rows.
 testPatternLoop:
+	mov [es:inputVal3], cx
 	in al, IO_LCD_LINE
 	mov dl, al
 	mov al, [es:si]
@@ -449,8 +492,8 @@ tpNoInc:
 	call readSoftADPCM
 	cmp al, bl
 	jz tpAdpcmOk
-	mov [es:testedResult1], al
-	mov [es:expectedResult1], bl
+	mov [es:expectedResult1], al
+	mov [es:testedResult1], bl
 	call printFailedResult
 	call checkKeyInput
 	xor al, 0
@@ -459,8 +502,7 @@ tpAdpcmOk:
 
 	loop testPatternLoop
 tpAdpcmStop:
-	mov al, 0xA
-	int 0x10
+	hlt						; Wait for VBlank
 	call checkKeyInput
 
 	ret
@@ -468,10 +510,12 @@ tpAdpcmStop:
 ; Test a lot of random nibbles written to the decoder.
 ;-----------------------------------------------------------------------------
 testADPCMRandom:
+	mov byte [es:isTesting], 7
 	call getLFSR1Value
 	mov si, ax
 	mov cx, 0
 testRandomLoop:
+	mov [es:inputVal3], cx
 	in al, IO_LCD_LINE
 	mov dl, al
 	test cl, 1
@@ -489,8 +533,8 @@ rndNoInc:
 	call readSoftADPCM
 	cmp al, bl
 	jz rndAdpcmOk
-	mov [es:testedResult1], al
-	mov [es:expectedResult1], bl
+	mov [es:expectedResult1], al
+	mov [es:testedResult1], bl
 	call printFailedResult
 	call checkKeyInput
 	xor al, 0
@@ -499,8 +543,7 @@ rndAdpcmOk:
 
 	loop testRandomLoop
 rndAdpcmStop:
-	mov al, 0xA
-	int 0x10
+	hlt						; Wait for VBlank
 	call checkKeyInput
 
 	ret
@@ -1217,6 +1260,11 @@ skipValue16Print:
 	call printHexW
 	jmp skipValuePrint
 skipValue32x16Print:
+	cmp al, 7
+	jnz skipValuePrint
+	mov byte [es:cursorXPos], 2
+	mov ax, [es:inputVal3]
+	call printHexW
 skipValuePrint:
 acknowledgeVBlankInterrupt:
 	mov al, INT_VBLANK_START
@@ -1460,6 +1508,7 @@ alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
 headLineStr: db "  WS Karnak Tester 20250706",10, 10 , 0
 
+menuDumpIOPortsStr: db "  Dump IO Ports.",10 , 0
 menuTestAllStr: db "  Test All.",10 , 0
 menuTestKarnakStr: db "  Test Karnak All Values.",10 , 0
 menuTestKarnakStr2: db "  Test Karnak All Val/reset",10 , 0
