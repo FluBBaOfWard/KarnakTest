@@ -195,13 +195,17 @@ main:
 	call writeString
 	mov si, menuTestAllStr
 	call writeString
-	mov si, menuTestKarnakStr
-	call writeString
-	mov si, menuTestKarnakStr2
-	call writeString
 	mov si, menuTestKarnakStr3
 	call writeString
 	mov si, menuTestKarnakStr4
+	call writeString
+	mov si, menuTestKarnakStr5
+	call writeString
+	mov si, menuTestKarnakStr6
+	call writeString
+	mov si, menuTestKarnakStr
+	call writeString
+	mov si, menuTestKarnakStr2
 	call writeString
 
 	; Turn on display
@@ -257,9 +261,9 @@ dontMoveUp:
 	test bl, (PAD_DOWN<<4)
 	jz dontMoveDown
 	add cl, 1
-	cmp cl, 5			; Index of last menu item
+	cmp cl, 7			; Index of last menu item
 	js dontMoveDown
-	mov cl, 5			; same
+	mov cl, 7			; same
 dontMoveDown:
 	mov [es:menuYPos], cl
 
@@ -289,13 +293,17 @@ dontMoveDown:
 	cmp cl, 1
 	jz testAll
 	cmp cl, 2
-	jz testKarnakAllValues
-	cmp cl, 3
-	jz testKarnakAllValuesWithReset
-	cmp cl, 4
 	jz testKarnakPatternValues
-	cmp cl, 5
+	cmp cl, 3
 	jz testKarnakRandomValues
+	cmp cl, 4
+	jz testKarnakWriteOnceReadTwice
+	cmp cl, 5
+	jz testKarnakWriteTwiceReadOnce
+	cmp cl, 6
+	jz testKarnakAllValues
+	cmp cl, 7
+	jz testKarnakAllValuesWithReset
 	; No input, restart main loop
 	jmp mainLoop
 ;-----------------------------------------------------------------------------
@@ -310,11 +318,35 @@ runDumpIOPorts:
 
 ;-----------------------------------------------------------------------------
 testAll:
-	call runKarnakTestAllValues
-	call runKarnakTestAllValuesWithReset
 	call runKarnakTestPatternValues
 	call runKarnakTestRandomValues
+	call runKarnakTestWriteOnceReadTwice
+	call runKarnakTestWriteTwiceReadOnce
 
+	call checkKeyInput
+	jmp main
+
+;-----------------------------------------------------------------------------
+testKarnakPatternValues:
+	call runKarnakTestPatternValues
+	call checkKeyInput
+	jmp main
+
+;-----------------------------------------------------------------------------
+testKarnakRandomValues:
+	call runKarnakTestRandomValues
+	call checkKeyInput
+	jmp main
+
+;-----------------------------------------------------------------------------
+testKarnakWriteOnceReadTwice:
+	call runKarnakTestWriteOnceReadTwice
+	call checkKeyInput
+	jmp main
+
+;-----------------------------------------------------------------------------
+testKarnakWriteTwiceReadOnce:
+	call runKarnakTestWriteTwiceReadOnce
 	call checkKeyInput
 	jmp main
 
@@ -331,16 +363,28 @@ testKarnakAllValuesWithReset:
 	jmp main
 
 ;-----------------------------------------------------------------------------
-testKarnakPatternValues:
-	call runKarnakTestPatternValues
-	call checkKeyInput
-	jmp main
+runKarnakTestPatternValues:
+	call resetADPCM
+	call testADPCMPattern
+	jmp endTestWriteOk
 
 ;-----------------------------------------------------------------------------
-testKarnakRandomValues:
-	call runKarnakTestRandomValues
-	call checkKeyInput
-	jmp main
+runKarnakTestRandomValues:
+	call resetADPCM
+	call testADPCMRandom
+	jmp endTestWriteOk
+
+;-----------------------------------------------------------------------------
+runKarnakTestWriteOnceReadTwice:
+	call resetADPCM
+	call testADPCMW1R2
+	jmp endTestWriteOk
+
+;-----------------------------------------------------------------------------
+runKarnakTestWriteTwiceReadOnce:
+	call resetADPCM
+	call testADPCMW2R1
+	jmp endTestWriteOk
 
 ;-----------------------------------------------------------------------------
 runKarnakTestAllValues:
@@ -400,24 +444,9 @@ runKarnakTestAllValuesWithReset:
 	jmp endTestWriteOk
 
 ;-----------------------------------------------------------------------------
-runKarnakTestPatternValues:
-	call resetADPCM
-	call testADPCMPattern
-	jmp endTestWriteOk
-
-;-----------------------------------------------------------------------------
-runKarnakTestRandomValues:
-	call resetADPCM
-	call testADPCMRandom
-	jmp endTestWriteOk
-
-;-----------------------------------------------------------------------------
 ; Print values of all IO ports.
 ;-----------------------------------------------------------------------------
 dumpIOPorts:
-	mov al, 0		; Reset timer/adpcm
-	out 0xD6, al
-
 	mov bp, 0xC0
 .b1:
 	mov ax, bp
@@ -473,7 +502,7 @@ testADPCMPattern:
 	mov byte [es:isTesting], 7
 	mov si, adpcmTestValues
 
-	mov cx, 16*24		; was 24 rows.
+	mov cx, 16*24		; 24 rows.
 testPatternLoop:
 	mov [es:inputVal3], cx
 	in al, IO_LCD_LINE
@@ -543,6 +572,101 @@ rndAdpcmOk:
 
 	loop testRandomLoop
 rndAdpcmStop:
+	hlt						; Wait for VBlank
+	call checkKeyInput
+
+	ret
+;-----------------------------------------------------------------------------
+; Test a lot of random nibbles written once, read twice.
+;-----------------------------------------------------------------------------
+testADPCMW1R2:
+	mov byte [es:isTesting], 7
+	call getLFSR1Value
+	mov si, ax
+	mov cx, 0x1000
+testW1R2Loop:
+	mov [es:inputVal3], cx
+	in al, IO_LCD_LINE
+	mov dl, al
+	test cl, 1
+	jz w1r2NoInc
+	call getLFSR1Value
+	mov si, ax
+w1r2NoInc:
+	mov ax, si
+	out 0xD8, al
+	call writeSoftADPCM
+	mov bl, dl
+	call waitNextLine
+	in al, 0xD9
+	mov bl, al
+	call readSoftADPCM
+	cmp al, bl
+	jnz w1r2AdpcmNotOk
+	inc dl
+	mov bl, dl
+	call waitNextLine
+	in al, 0xD9
+	mov bl, al
+	call readSoftADPCM
+	cmp al, bl
+	jz w1r2AdpcmOk
+w1r2AdpcmNotOk:
+	mov [es:expectedResult1], al
+	mov [es:testedResult1], bl
+	call printFailedResult
+	call checkKeyInput
+	xor al, 0
+	jz w1r2AdpcmStop
+w1r2AdpcmOk:
+
+	loop testW1R2Loop
+w1r2AdpcmStop:
+	hlt						; Wait for VBlank
+	call checkKeyInput
+
+	ret
+;-----------------------------------------------------------------------------
+; Test a lot of random nibbles written twice, read once.
+;-----------------------------------------------------------------------------
+testADPCMW2R1:
+	mov byte [es:isTesting], 7
+	call getLFSR1Value
+	mov si, ax
+	mov cx, 0x1000
+testW2R1Loop:
+	mov [es:inputVal3], cx
+	in al, IO_LCD_LINE
+	mov dl, al
+	call getLFSR1Value
+	mov si, ax
+w2r1NoInc:
+	mov ax, si
+	out 0xD8, al
+	call writeSoftADPCM
+	mov bl, dl
+	call waitNextLine
+	mov ax, si
+	out 0xD8, al
+	call writeSoftADPCM
+	inc dl
+	mov bl, dl
+	call waitNextLine
+	in al, 0xD9
+	mov bl, al
+	call readSoftADPCM
+	cmp al, bl
+	jz w2r1AdpcmOk
+	mov [es:expectedResult1], al
+	mov [es:testedResult1], bl
+	call printFailedResult
+	call checkKeyInput
+	xor al, 0
+	jz w2r1AdpcmStop
+w2r1AdpcmOk:
+
+	loop testW2R1Loop
+w2r1AdpcmStop:
 	hlt						; Wait for VBlank
 	call checkKeyInput
 
@@ -1506,15 +1630,17 @@ adpcmTestValues:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db "  WS Karnak Tester 20250706",10, 10 , 0
+headLineStr: db "  WS Karnak Tester 20250707",10, 10 , 0
 
 menuDumpIOPortsStr: db "  Dump IO Ports.",10 , 0
 menuTestAllStr: db "  Test All.",10 , 0
-menuTestKarnakStr: db "  Test Karnak All Values.",10 , 0
-menuTestKarnakStr2: db "  Test Karnak All Val/reset",10 , 0
+menuTestKarnakStr: db "  Karnak Dump All Values.",10 , 0
+menuTestKarnakStr2: db "  Karnak Dump All Val/reset",10 , 0
 menuTestKarnakStr3: db "  Test Karnak Table Values.",10 , 0
 menuTestKarnakStr4: db "  Test Karnak RND values.",10 , 0
-menuTestKarnakStr5: db "  Test Karnak Saturation.",10 , 0
+menuTestKarnakStr5: db "  Test Karnak Wr 1, Rd 2.",10 , 0
+menuTestKarnakStr6: db "  Test Karnak Wr 2, Rd 1.",10 , 0
+menuTestKarnakStr7: db "  Test Karnak Saturation.",10 , 0
 
 testingOnly0Str: db "Write only 0x0", 10, 0
 testingOnly1Str: db "Write only 0x1", 10, 0
