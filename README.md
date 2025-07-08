@@ -1,4 +1,4 @@
-# WonderSwan Karnak mapper Test V0.1.0 (20250707)
+# WonderSwan Karnak Mapper Test V0.1.0 (20250708)
 
 This is a Karnak mapper test program for Bandai WonderSwan (Color/Crystal) & Benesse PocketChallenge V2.
 
@@ -30,19 +30,27 @@ results.
 
 ## How it works
 
+### 0xD6
+
 Bit #7 of IO address 0xD6 turns on/off ADPCM and a timer, setting the bit to 0
 resets the ADPCM output to 0x80 (accumulator is 0x100) (and probably odd/even &
-index). The lower 7 bits are the timer value ((val + 1) * 2), in 384kHz
-(cartridge clocks). Reading 0xD6 returns the value written to 0xD6.
+index). Writing the same value again doesn't affect the ADPCM engine. The lower
+7 bits are the timer value ((val + 1) * 2), in 384kHz (cartridge clocks).
+Reading 0xD6 returns the value written to 0xD6.
+After enabling ADPCM the output value is still 0x80 (accumulator is 0x100),
+the index is 0 and the top nybble is decoded first.
 
-After an ADPCM reset the output value is 0x80
-(accumulator is 0x100), the index is 0 and the top nybble is decoded first.
+### 0xD8, 0xD9
 
 ADPCM values (nybbles) are written to IO address 0xD8, decoded PCM samples can
 then be read from 0xD9. Every other write uses the top/bottom nybble, top first
-, so you write the same byte twice and read samples after each write. Reading
-IO address 0xD8 returns the last written value. Writing to 0xD9 doesn't seem to
-do anything. Only writing changes the state of the ADPCM engine, reading doesn't.
+, so you write the same byte twice and read samples after each write.
+The conversion requires 2 Cartridge clocks (16 cpu clocks) between write and read.
+Reading IO address 0xD8 returns its last written value, no matter if ADPCM is on or off.
+Writing to 0xD9 doesn't seem to do anything, no matter if ADPCM is on or off.
+Only _writing_ changes the state of the ADPCM engine, reading does not.
+
+### ADPCM algorithm
 
 The actual ADPCM algorithm is the same as the NEC upd775x chips (but without
 any format/headers handling). Though one thing I haven't seen documented (or it

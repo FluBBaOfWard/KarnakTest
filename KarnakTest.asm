@@ -203,6 +203,12 @@ main:
 	call writeString
 	mov si, menuTestKarnakStr6
 	call writeString
+	mov si, menuTestKarnakStr7
+	call writeString
+	mov si, menuTestKarnakStr8
+	call writeString
+	mov si, menuTestKarnakStr9
+	call writeString
 	mov si, menuTestKarnakStr
 	call writeString
 	mov si, menuTestKarnakStr2
@@ -261,9 +267,9 @@ dontMoveUp:
 	test bl, (PAD_DOWN<<4)
 	jz dontMoveDown
 	add cl, 1
-	cmp cl, 7			; Index of last menu item
+	cmp cl, 10			; Index of last menu item
 	js dontMoveDown
-	mov cl, 7			; same
+	mov cl, 10			; same
 dontMoveDown:
 	mov [es:menuYPos], cl
 
@@ -295,14 +301,20 @@ dontMoveDown:
 	cmp cl, 2
 	jz testKarnakPatternValues
 	cmp cl, 3
-	jz testKarnakRandomValues
+	jz testKarnakSaturationValues
 	cmp cl, 4
-	jz testKarnakWriteOnceReadTwice
+	jz testKarnakRandomValues
 	cmp cl, 5
-	jz testKarnakWriteTwiceReadOnce
+	jz testKarnakWriteOnceReadTwice
 	cmp cl, 6
-	jz testKarnakAllValues
+	jz testKarnakWriteTwiceReadOnce
 	cmp cl, 7
+	jz testKarnakEnabled
+	cmp cl, 8
+	jz testKarnakTiming
+	cmp cl, 9
+	jz testKarnakAllValues
+	cmp cl, 10
 	jz testKarnakAllValuesWithReset
 	; No input, restart main loop
 	jmp mainLoop
@@ -319,9 +331,12 @@ runDumpIOPorts:
 ;-----------------------------------------------------------------------------
 testAll:
 	call runKarnakTestPatternValues
+	call runKarnakTestSaturationValues
 	call runKarnakTestRandomValues
 	call runKarnakTestWriteOnceReadTwice
 	call runKarnakTestWriteTwiceReadOnce
+	call runKarnakTestTiming
+	call runKarnakTestEnabled
 
 	call checkKeyInput
 	jmp main
@@ -329,6 +344,11 @@ testAll:
 ;-----------------------------------------------------------------------------
 testKarnakPatternValues:
 	call runKarnakTestPatternValues
+	call checkKeyInput
+	jmp main
+
+testKarnakSaturationValues:
+	call runKarnakTestSaturationValues
 	call checkKeyInput
 	jmp main
 
@@ -351,6 +371,18 @@ testKarnakWriteTwiceReadOnce:
 	jmp main
 
 ;-----------------------------------------------------------------------------
+testKarnakTiming:
+	call runKarnakTestTiming
+	call checkKeyInput
+	jmp main
+
+;-----------------------------------------------------------------------------
+testKarnakEnabled:
+	call runKarnakTestEnabled
+	call checkKeyInput
+	jmp main
+
+;-----------------------------------------------------------------------------
 testKarnakAllValues:
 	call runKarnakTestAllValues
 	call checkKeyInput
@@ -369,6 +401,12 @@ runKarnakTestPatternValues:
 	jmp endTestWriteOk
 
 ;-----------------------------------------------------------------------------
+runKarnakTestSaturationValues:
+	call resetADPCM
+	call testADPCMSaturation
+	jmp endTestWriteOk
+
+;-----------------------------------------------------------------------------
 runKarnakTestRandomValues:
 	call resetADPCM
 	call testADPCMRandom
@@ -384,6 +422,18 @@ runKarnakTestWriteOnceReadTwice:
 runKarnakTestWriteTwiceReadOnce:
 	call resetADPCM
 	call testADPCMW2R1
+	jmp endTestWriteOk
+
+;-----------------------------------------------------------------------------
+runKarnakTestTiming:
+	call resetADPCM
+	call testADPCMTiming
+	jmp endTestWriteOk
+
+;-----------------------------------------------------------------------------
+runKarnakTestEnabled:
+	call resetADPCM
+	call testADPCMEnabled
 	jmp endTestWriteOk
 
 ;-----------------------------------------------------------------------------
@@ -501,8 +551,8 @@ testOnlyNibbleLoop:
 testADPCMPattern:
 	mov byte [es:isTesting], 7
 	mov si, adpcmTestValues
-
 	mov cx, 16*24		; 24 rows.
+
 testPatternLoop:
 	mov [es:inputVal3], cx
 	in al, IO_LCD_LINE
@@ -536,6 +586,15 @@ tpAdpcmStop:
 
 	ret
 ;-----------------------------------------------------------------------------
+; Test saturation of the decoder.
+;-----------------------------------------------------------------------------
+testADPCMSaturation:
+	mov byte [es:isTesting], 7
+	mov si, adpcmSaturationValues
+	mov cx, 16*2		; 4 rows.
+	jmp testPatternLoop
+
+;-----------------------------------------------------------------------------
 ; Test a lot of random nibbles written to the decoder.
 ;-----------------------------------------------------------------------------
 testADPCMRandom:
@@ -543,15 +602,15 @@ testADPCMRandom:
 	call getLFSR1Value
 	mov si, ax
 	mov cx, 0
-testRandomLoop:
+rndAdpcmLoop:
 	mov [es:inputVal3], cx
 	in al, IO_LCD_LINE
 	mov dl, al
 	test cl, 1
-	jz rndNoInc
+	jz rndAdpcmNoInc
 	call getLFSR1Value
 	mov si, ax
-rndNoInc:
+rndAdpcmNoInc:
 	mov ax, si
 	out 0xD8, al
 	call writeSoftADPCM
@@ -570,8 +629,115 @@ rndNoInc:
 	jz rndAdpcmStop
 rndAdpcmOk:
 
-	loop testRandomLoop
+	loop rndAdpcmLoop
 rndAdpcmStop:
+	hlt						; Wait for VBlank
+	call checkKeyInput
+
+	ret
+;-----------------------------------------------------------------------------
+; Test a lot of random nibbles written to the decoder.
+;-----------------------------------------------------------------------------
+testADPCMEnabled:
+	mov byte [es:isTesting], 7
+	call getLFSR1Value
+	mov si, ax
+	mov cx, 0
+enaAdpcmLoop:
+	mov [es:inputVal3], cx
+	in al, IO_LCD_LINE
+	mov dl, al
+	test cl, 1
+	jz enaAdpcmNoInc
+	call getLFSR1Value
+	mov si, ax
+enaAdpcmNoInc:
+	mov ax, si
+	out 0xD8, al
+	call writeSoftADPCM
+	mov bl, dl
+	call waitNextLine
+	in al, 0xD9
+	mov bl, al
+	call readSoftADPCM
+	cmp al, bl
+	jnz enaAdpcmFail
+	mov ax, si
+	mov bl, [es:adpcmInput]
+	cmp al, bl
+	jz enaAdpcmOk
+enaAdpcmFail:
+	mov [es:expectedResult1], al
+	mov [es:testedResult1], bl
+	call printFailedResult
+	call checkKeyInput
+	xor al, 0
+	jz enaAdpcmStop
+enaAdpcmOk:
+	cmp cl, 0x80
+	jnz enaNoDisable
+	call disableADPCM
+enaNoDisable:
+	cmp cl, 0x00
+	jnz enaNoEnable
+	call enableADPCM
+enaNoEnable:
+	loop enaAdpcmLoop
+enaAdpcmStop:
+	hlt						; Wait for VBlank
+	call checkKeyInput
+
+	ret
+;-----------------------------------------------------------------------------
+; Test a lot of random nibbles written to the decoder.
+;-----------------------------------------------------------------------------
+testADPCMTiming:
+	mov byte [es:isTesting], 7
+	call getLFSR1Value
+	mov si, ax
+	mov cx, 0
+timAdpcmLoop:
+	mov [es:inputVal3], cx
+	test cl, 1
+	jz timAdpcmNoInc
+	call getLFSR1Value
+	mov si, ax
+timAdpcmNoInc:
+	mov ax, si
+	call writeSoftADPCM
+	mov ax, si
+	out 0xD8, al
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	in al, 0xD9
+	mov bl, al
+	call readSoftADPCM
+	cmp al, bl
+	jz timAdpcmOk
+	mov [es:expectedResult1], al
+	mov [es:testedResult1], bl
+	call printFailedResult
+	call checkKeyInput
+	xor al, 0
+	jz timAdpcmStop
+timAdpcmOk:
+
+	loop timAdpcmLoop
+timAdpcmStop:
 	hlt						; Wait for VBlank
 	call checkKeyInput
 
@@ -817,14 +983,6 @@ testOnlyF:
 	jmp testSingleNibbleOnly
 
 ;-----------------------------------------------------------------------------
-; Test all values in the ADPCM table.
-;-----------------------------------------------------------------------------
-testTable:
-	mov si, testingTableStr
-	call writeString
-
-	ret
-;-----------------------------------------------------------------------------
 waitNextLine:
 	in al, IO_LCD_LINE
 	cmp bl, al
@@ -835,25 +993,38 @@ waitNextLine:
 ; Reset ADPCM chip
 ;-----------------------------------------------------------------------------
 resetADPCM:
-	mov al, 0		; Reset timer/adpcm
-	out 0xD6, al
-	mov al, 0x80
-	out 0xD6, al
-;	ret
+	call disableADPCM
+	jmp enableADPCM
 ;-----------------------------------------------------------------------------
-; Reset soft ADPCM
-;-----------------------------------------------------------------------------
-resetSoftADPCM:
+disableADPCM:
+	xor al, al		; Reset timer/adpcm
+	out 0xD6, al
+disableSoftADPCM:
 	xor al, al
+	mov [es:adpcmEnable], al
 	mov [es:adpcmIdx], al
 	mov [es:adpcmOdd], al
 	mov ax, 0x4000
 	mov [es:adpcmAcc], ax
 	ret
 ;-----------------------------------------------------------------------------
+enableADPCM:
+	mov al, 0x80
+	out 0xD6, al
+enableSoftADPCM:
+	mov al, 0x80
+	mov [es:adpcmEnable], al
+	ret
+;-----------------------------------------------------------------------------
 ; Write ADPCM value to software version.
 ;-----------------------------------------------------------------------------
 writeSoftADPCM:
+	mov [es:adpcmInput], al
+	mov bl, [es:adpcmEnable]
+	test bl, 0x80
+	jnz adpcmIsOn
+	ret
+adpcmIsOn:
 	push cx
 	push si
 	mov bl, [es:inputVal1]
@@ -1627,20 +1798,26 @@ adpcmTestValues:
 	db 0x97, 0x99, 0xF9, 0x97, 0x99, 0xF9, 0x97, 0x99
 	db 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88, 0x88
 
+adpcmSaturationValues:
+	db 0x77, 0x77, 0x71, 0x88, 0x08, 0x77, 0x20, 0x88
+	db 0x07, 0x54, 0x80, 0x08, 0x00, 0x00, 0x00, 0x00
+
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db "  WS Karnak Tester 20250707",10, 10 , 0
+headLineStr: db "  WS Karnak Tester 20250708",10, 10 , 0
 
 menuDumpIOPortsStr: db "  Dump IO Ports.",10 , 0
 menuTestAllStr: db "  Test All.",10 , 0
 menuTestKarnakStr: db "  Karnak Dump All Values.",10 , 0
 menuTestKarnakStr2: db "  Karnak Dump All Val/reset",10 , 0
 menuTestKarnakStr3: db "  Test Karnak Table Values.",10 , 0
-menuTestKarnakStr4: db "  Test Karnak RND values.",10 , 0
-menuTestKarnakStr5: db "  Test Karnak Wr 1, Rd 2.",10 , 0
-menuTestKarnakStr6: db "  Test Karnak Wr 2, Rd 1.",10 , 0
-menuTestKarnakStr7: db "  Test Karnak Saturation.",10 , 0
+menuTestKarnakStr4: db "  Test Karnak Saturation.",10 , 0
+menuTestKarnakStr5: db "  Test Karnak RND values.",10 , 0
+menuTestKarnakStr6: db "  Test Karnak Wr 1, Rd 2.",10 , 0
+menuTestKarnakStr7: db "  Test Karnak Wr 2, Rd 1.",10 , 0
+menuTestKarnakStr8: db "  Test Karnak Wr Disabled.",10 , 0
+menuTestKarnakStr9: db "  Test Karnak Timing.",10 , 0
 
 testingOnly0Str: db "Write only 0x0", 10, 0
 testingOnly1Str: db "Write only 0x1", 10, 0
@@ -1702,11 +1879,13 @@ keysHeld: resb 1
 keysDown: resb 1
 
 adpcmAcc: resw 1
+adpcmInput: resb 1
+adpcmEnable: resb 1
 adpcmOdd: resb 1
 adpcmIdx: resb 1
 
 adpcmIdxOld: resb 1
-adpcmVal: resb 1
+adpcmAlign: resb 1
 
 lfsr1: resw 1
 lfsr2: resw 1
