@@ -50,6 +50,15 @@ initialize:
 	cli
 	cld
 
+	in al, SYSTEM_CTRL1
+	test al, 0x02			; Color model?
+	jnz notPCV2
+	in al, IO_SND_OUT_CTRL
+	test al, 0x80			; Headphones connected?
+	jz notPCV2
+	mov al, [ss:bootMode]
+	mov [ss:pcv2Mode], al
+notPCV2:
 ;-----------------------------------------------------------------------------
 ; Initialize registers and RAM
 ;-----------------------------------------------------------------------------
@@ -241,35 +250,13 @@ main:
 mainLoop:
 	hlt					; Wait until next interrupt
 
-	mov al, KEYPAD_READ_ARROWS_H
-	out IO_KEYPAD, al
-	nop
-	nop
-	nop
-	nop
-	in al, IO_KEYPAD
-	mov bl, al
-	mov al, KEYPAD_READ_BUTTONS
-	out IO_KEYPAD, al
-	nop
-	nop
-	nop
-	nop
-	in al, IO_KEYPAD
-	and al, 0x0F
-	shl bl, 4
-	or al, bl
-	mov bl, [es:keysHeld]
-	mov [es:keysHeld], al
-	xor bl, al
-	and bl, al
-	mov [es:keysDown], bl
+	mov bx, [es:keysDown]
 
 	; Check player input
-;	test al, PAD_RIGHT
+;	test bl, PAD_RIGHT
 ;	jnz speed_up
 
-;	test al, PAD_LEFT
+;	test bl, PAD_LEFT
 ;	jnz speed_down
 
 	mov cl, [es:menuYPos]
@@ -1109,22 +1096,13 @@ saturateADPCM:
 ;-----------------------------------------------------------------------------
 checkKeyInput:
 	hlt
-	in al, IO_KEYPAD
-	test al, PAD_A | PAD_B
-	jnz checkKeyInput		; Make sure no input is held before.
-keyLoop:
-	hlt
-	in al, IO_KEYPAD
-	test al, PAD_A
-	jnz keyContinue
-	test al, PAD_B
-	jnz keyCancel
-	jmp keyLoop
-keyContinue:
+	mov al, [es:keysDown]
+	test al, PAD_A | PAD_B | PAD_START
+	jz checkKeyInput
+	and al, PAD_A
+	jz keyCancel
 	mov al, 1
-	ret
 keyCancel:
-	xor al, al
 	ret
 ;-----------------------------------------------------------------------------
 ; Gets the next number from LFSR1 in AX
@@ -1494,14 +1472,76 @@ printNibble:
 	int 0x10
 	ret
 ;-----------------------------------------------------------------------------
+; Special Keypad handler for PCV2
+;-----------------------------------------------------------------------------
+checkPCV2Keys:
+	push si
+	xor ah,ah
+	xor bh,bh
+	mov al, KEYPAD_READ_BUTTONS
+	out IO_KEYPAD, al
+	daa
+	in al, IO_KEYPAD
+	and al, 0x0F
+	mov si, ax
+	mov bl,[ds:pcv2udl, si]
+	shl bl, 4
+	mov al, KEYPAD_READ_ARROWS_H
+	out IO_KEYPAD, al
+	daa
+	in al, IO_KEYPAD
+	and al, 0x0F
+	mov si, ax
+	mov al,[ds:pcv2rev, si]
+	or bl, al
+	mov al, KEYPAD_READ_ARROWS_V
+	out IO_KEYPAD, al
+	daa
+	in al, IO_KEYPAD
+	and al, 0x0F
+	mov si, ax
+	mov al,[ds:pcv2pcc, si]
+	or bl, al
+
+	pop si
+	ret
+;-----------------------------------------------------------------------------
 ; Our vblank interrupt handler
-; It is called automatically whenever the vblank interrupt occurs, 
-; that is, every time the screen is fully drawn.
 ;-----------------------------------------------------------------------------
 vblankInterruptHandler:
 	push ax
 	push bx
 	push di
+
+	mov al, [ss:pcv2Mode]
+	cmp al, 2
+	jnz normalKeys
+	call checkPCV2Keys
+	jmp setKeypad
+normalKeys:
+	mov al, KEYPAD_READ_BUTTONS
+	out IO_KEYPAD, al
+	daa
+	in al, IO_KEYPAD
+	mov bl, al
+	and bl, 0x0F
+	mov al, KEYPAD_READ_ARROWS_H
+	out IO_KEYPAD, al
+	daa
+	in al, IO_KEYPAD
+	shl al, 4
+	or bl, al
+	mov al, KEYPAD_READ_ARROWS_V
+	out IO_KEYPAD, al
+	daa
+	in al, IO_KEYPAD
+	mov bh, al
+setKeypad:
+	mov ax, [es:keysHeld]
+	mov [es:keysHeld], bx
+	xor ax, bx
+	and ax, bx
+	mov [es:keysDown], ax
 
 	; globalFrameCounter++
 	inc word [es:globalFrameCounter]
