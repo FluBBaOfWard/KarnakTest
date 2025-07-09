@@ -13,24 +13,39 @@
 ;-----------------------------------------------------------------------------
 
 	ORG 0x6800
+;	ORG 0x40000
 	CPU 186
 	BITS 16
 
 	%include "WonderSwan.inc"
 
-	MYSEGMENT equ 0x0000
+	CODESEGMENT equ 0x0000
+	DATASEGMENT equ 0x0000
+;	CODESEGMENT equ 0x4000
+;	DATASEGMENT equ 0xF000
 	foregroundMap equ WS_TILE_BANK - MAP_SIZE
 	backgroundMap equ foregroundMap - MAP_SIZE
 	spriteTable equ backgroundMap - SPR_TABLE_SIZE
 
-	PSR_S equ 0x80
-	PSR_Z equ 0x40
-	PSR_P equ 0x04
+	MENU_ENTRIES equ 10
 
 SECTION .text start=0x6800
 
 	db 0x62,0x46
 	dw initialize
+;SECTION .text start=0x40000
+;-----------------------------------------------------------------------------
+debugInit:				; this should be called when keypad row 0 is always 1
+;-----------------------------------------------------------------------------
+;	mov al, 1
+;	mov [ss:bootMode], al
+;	jmp initialize
+;	times	(16)-$+$$ db 0x00
+;-----------------------------------------------------------------------------
+pcv2Init:				; this should be called when keypad row 1 is always 1
+;-----------------------------------------------------------------------------
+;	mov al, 2
+;	mov [ss:bootMode], al
 initialize:
 	cli
 	cld
@@ -38,7 +53,7 @@ initialize:
 ;-----------------------------------------------------------------------------
 ; Initialize registers and RAM
 ;-----------------------------------------------------------------------------
-	mov ax, MYSEGMENT
+	mov ax, DATASEGMENT
 	mov ds, ax
 	xor ax, ax
 	mov es, ax			; Set ES segment to 0x0000 (RAM).
@@ -91,39 +106,39 @@ initialize:
 ;-----------------------------------------------------------------------------
 	mov di, 0*4		; Division error vector
 	mov word [es:di], divisionErrorHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 1*4		; Trap/Brk
 	mov word [es:di], trapHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 2*4		; NMI
 	mov word [es:di], nmiHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 3*4		; Int3
 	mov word [es:di], int3InstructionHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 4*4		; BRKV
 	mov word [es:di], overflowExceptionHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 5*4		; CHKIND
 	mov word [es:di], boundsExceptionHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 6*4		; Undefined instruction vector
 	mov word [es:di], undefinedInstructionHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 7*4		; POLL
 	mov word [es:di], pollExceptionHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov di, 0x10*4	; output char vector
 	mov word [es:di], outputCharHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	mov ax, INT_BASE	; 0x20
 	out IO_INT_VECTOR, al
@@ -132,7 +147,7 @@ initialize:
 	add di, ax
 	shl di, 2
 	mov word [es:di], vblankInterruptHandler
-	mov word [es:di + 2], MYSEGMENT
+	mov word [es:di + 2], CODESEGMENT
 
 	; Clear HBL & Timer
 	xor ax, ax
@@ -267,9 +282,9 @@ dontMoveUp:
 	test bl, (PAD_DOWN<<4)
 	jz dontMoveDown
 	add cl, 1
-	cmp cl, 10			; Index of last menu item
+	cmp cl, MENU_ENTRIES
 	js dontMoveDown
-	mov cl, 10			; same
+	mov cl, MENU_ENTRIES
 dontMoveDown:
 	mov [es:menuYPos], cl
 
@@ -559,7 +574,7 @@ testPatternLoop:
 	mov [es:inputVal3], cx
 	in al, IO_LCD_LINE
 	mov dl, al
-	mov al, [es:si]
+	mov al, [ds:si]
 	test cl, 1
 	jz tpNoInc
 	inc si
@@ -1052,13 +1067,13 @@ notOdd:
 	mov bl, al
 	and bl, 7
 	xor cx, cx
-	mov cl, [es:upd775xStep + bx + si]
+	mov cl, [ds:upd775xStep + bx + si]
 	test al,8
 	jz notSign
 	neg cx
 notSign:
 	shl cx, 6
-	mov bl, [es:upd775xIndexShift + bx]
+	mov bl, [ds:upd775xIndexShift + bx]
 	mov al, [es:adpcmIdx]
 	add al, bl
 	jns notUnder
@@ -1690,6 +1705,7 @@ endOutput:
 ;-----------------------------------------------------------------------------
 ; Constants area
 ;-----------------------------------------------------------------------------
+;SECTION .data start=0xF0000
 
 	align 2
 
@@ -1873,7 +1889,12 @@ fHexPrefixStr: db " F:0x",0
 
 author: db "Written by Fredrik Ahlström, 2025"
 
+;	ROM_HEADER initialize, CODESEGMENT, RH_WS_MONO, RH_ROM_4MBITS, RH_NO_SRAM, RH_HORIZONTAL
+
 SECTION .bss start=0x0100 ; Keep space for Int Vectors
+
+bootMode: resb 1
+pcv2Mode: resb 1
 
 globalFrameCounter: resw 1
 bgPos:
@@ -1887,8 +1908,6 @@ cursorXPos: resb 1
 cursorYPos: resb 1
 menuXPos: resb 1
 menuYPos: resb 1
-keysHeld: resb 1
-keysDown: resb 1
 
 adpcmAcc: resw 1
 adpcmInput: resb 1
@@ -1899,6 +1918,11 @@ adpcmIdx: resb 1
 adpcmIdxOld: resb 1
 adpcmAlign: resb 1
 
+	align 2
+; Keys held down
+keysHeld: resw 1
+; Keys pressed down since last time
+keysDown: resw 1
 lfsr1: resw 1
 lfsr2: resw 1
 lfsr3: resw 2
@@ -1912,7 +1936,7 @@ inputCarry: resw 1
 testedResult1: resw 1
 testedResult2: resw 1
 testedFlags: resw 1
-testedException: resw 1		; If a (division) exception occurred.
+testedException: resw 1		; If an exception occurred.
 
 expectedResult1: resw 1
 expectedResult2: resw 1
@@ -1921,5 +1945,3 @@ expectedException: resw 1
 
 isTesting: resb 1			; If currently running test.
 dummy: resb 1
-
-selfModifyingCode: resb 8

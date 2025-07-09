@@ -18,7 +18,7 @@ I use nasm <https://nasm.us/> by running "nasm -f bin -o KarnakTest.bfb KarnakTe
 
 ## Controls
 
-Use WS X1-X4 to navigate the menus. A to select/continue failed test, B to go back/skip failed test.
+Use WS X1 & X3 to navigate the menus. A to select/continue failed test, B to go back/skip failed test.
 
 ## The Tests
 
@@ -27,6 +27,47 @@ If a test fails it will write out the ADPCM value written and the current index
 out), also the tested PCM value and expected PCM value. Continuing the test
 will fail all remaining tests since the results are dependant on previous
 results.
+
+### Test Karnak Table Values
+
+This test tries to access all ADPCM diff table values, though it doesn't test
+all minus values.
+
+### Test Karnak Saturation
+
+This test make sure that 0x1FF, 0x200, 0x2FF, 0x300, 0x3FF & 0x000 give the right
+output.
+
+### Test Karnak RND values
+
+This just test 64k random values.
+
+### Test Karnak Wr 1, Rd 2
+
+This test reads 0xD9 twice instead of just once.
+
+### Test Karnak Wr 2, Rd 1
+
+This test writes 0xD9 twice instead of just once.
+
+### Test Karnak Wr Disabled
+
+This test disables & enables ADPCM through out the test.
+
+### Test Karnak Timing
+
+This test tries to read result as fast as possible, not really a test.
+Conversion can take up to 16 cpu cycles between write and read, but also down
+to 0 cpu cycles.
+
+### Karnak Dump All Values
+
+Not a test, writes out the result from writing a sequence of the same nybbles.
+
+### Karnak Dump All Val/reset
+
+Not a test, writes out the result from writing a sequence of the same nybbles,
+resets the ADPCM after changing value.
 
 ## How it works
 
