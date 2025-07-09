@@ -46,6 +46,7 @@ pcv2Init:				; this should be called when keypad row 1 is always 1
 ;-----------------------------------------------------------------------------
 ;	mov al, 2
 ;	mov [ss:bootMode], al
+;-----------------------------------------------------------------------------
 initialize:
 	cli
 	cld
@@ -73,11 +74,9 @@ notPCV2:
 	mov sp, WS_STACK
 
 	; Clear Ram
-	mov di, 0x0100
-	mov cx, 0x1E80
+	mov di, globalFrameCounter
+	mov cx, 0x1800
 	rep stosw
-
-	out IO_SRAM_BANK,al
 
 ;-----------------------------------------------------------------------------
 ; Initialize variables
@@ -1471,6 +1470,7 @@ printNibble:
 	add al, 'a' - 0xa
 	int 0x10
 	ret
+
 ;-----------------------------------------------------------------------------
 ; Special Keypad handler for PCV2
 ;-----------------------------------------------------------------------------
