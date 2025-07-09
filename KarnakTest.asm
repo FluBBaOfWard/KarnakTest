@@ -209,9 +209,9 @@ main:
 	call writeString
 	mov si, menuTestKarnakStr9
 	call writeString
-	mov si, menuTestKarnakStr
+	mov si, menuTestKarnakStr10
 	call writeString
-	mov si, menuTestKarnakStr2
+	mov si, menuTestKarnakStr11
 	call writeString
 
 	; Turn on display
@@ -549,6 +549,8 @@ testOnlyNibbleLoop:
 ; Test a pattern of nibbles written to the decoder.
 ;-----------------------------------------------------------------------------
 testADPCMPattern:
+	mov si, testingTableStr
+	call writeString
 	mov byte [es:isTesting], 7
 	mov si, adpcmTestValues
 	mov cx, 16*24		; 24 rows.
@@ -582,13 +584,14 @@ tpAdpcmOk:
 	loop testPatternLoop
 tpAdpcmStop:
 	hlt						; Wait for VBlank
-	call checkKeyInput
 
 	ret
 ;-----------------------------------------------------------------------------
 ; Test saturation of the decoder.
 ;-----------------------------------------------------------------------------
 testADPCMSaturation:
+	mov si, testingSaturationStr
+	call writeString
 	mov byte [es:isTesting], 7
 	mov si, adpcmSaturationValues
 	mov cx, 16*2		; 4 rows.
@@ -598,6 +601,8 @@ testADPCMSaturation:
 ; Test a lot of random nibbles written to the decoder.
 ;-----------------------------------------------------------------------------
 testADPCMRandom:
+	mov si, testingValuesStr
+	call writeString
 	mov byte [es:isTesting], 7
 	call getLFSR1Value
 	mov si, ax
@@ -632,13 +637,14 @@ rndAdpcmOk:
 	loop rndAdpcmLoop
 rndAdpcmStop:
 	hlt						; Wait for VBlank
-	call checkKeyInput
 
 	ret
 ;-----------------------------------------------------------------------------
 ; Test a lot of random nibbles written to the decoder.
 ;-----------------------------------------------------------------------------
 testADPCMEnabled:
+	mov si, testingDisabledStr
+	call writeString
 	mov byte [es:isTesting], 7
 	call getLFSR1Value
 	mov si, ax
@@ -685,67 +691,14 @@ enaNoEnable:
 	loop enaAdpcmLoop
 enaAdpcmStop:
 	hlt						; Wait for VBlank
-	call checkKeyInput
-
-	ret
-;-----------------------------------------------------------------------------
-; Test a lot of random nibbles written to the decoder.
-;-----------------------------------------------------------------------------
-testADPCMTiming:
-	mov byte [es:isTesting], 7
-	call getLFSR1Value
-	mov si, ax
-	mov cx, 0
-timAdpcmLoop:
-	mov [es:inputVal3], cx
-	test cl, 1
-	jz timAdpcmNoInc
-	call getLFSR1Value
-	mov si, ax
-timAdpcmNoInc:
-	mov ax, si
-	call writeSoftADPCM
-	mov ax, si
-	out 0xD8, al
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	in al, 0xD9
-	mov bl, al
-	call readSoftADPCM
-	cmp al, bl
-	jz timAdpcmOk
-	mov [es:expectedResult1], al
-	mov [es:testedResult1], bl
-	call printFailedResult
-	call checkKeyInput
-	xor al, 0
-	jz timAdpcmStop
-timAdpcmOk:
-
-	loop timAdpcmLoop
-timAdpcmStop:
-	hlt						; Wait for VBlank
-	call checkKeyInput
 
 	ret
 ;-----------------------------------------------------------------------------
 ; Test a lot of random nibbles written once, read twice.
 ;-----------------------------------------------------------------------------
 testADPCMW1R2:
+	mov si, testingWr1Rd2Str
+	call writeString
 	mov byte [es:isTesting], 7
 	call getLFSR1Value
 	mov si, ax
@@ -789,13 +742,14 @@ w1r2AdpcmOk:
 	loop testW1R2Loop
 w1r2AdpcmStop:
 	hlt						; Wait for VBlank
-	call checkKeyInput
 
 	ret
 ;-----------------------------------------------------------------------------
 ; Test a lot of random nibbles written twice, read once.
 ;-----------------------------------------------------------------------------
 testADPCMW2R1:
+	mov si, testingWr2Rd1Str
+	call writeString
 	mov byte [es:isTesting], 7
 	call getLFSR1Value
 	mov si, ax
@@ -834,7 +788,59 @@ w2r1AdpcmOk:
 	loop testW2R1Loop
 w2r1AdpcmStop:
 	hlt						; Wait for VBlank
+
+	ret
+;-----------------------------------------------------------------------------
+; Test a lot of random nibbles written to the decoder.
+;-----------------------------------------------------------------------------
+testADPCMTiming:
+	mov si, testingTimingStr
+	call writeString
+	mov byte [es:isTesting], 7
+	in al, 0xD9
+	mov bp, ax
+	call getLFSR1Value
+	mov si, ax
+	mov cx, 0
+timAdpcmLoop:
+	mov [es:inputVal3], cx
+	test cl, 1
+	jz timAdpcmNoInc
+	call getLFSR1Value
+	mov si, ax
+timAdpcmNoInc:
+	mov ax, si
+	call writeSoftADPCM
+	mov ax, si
+	out 0xD8, al
+	in al, 0xD9
+	mov bx, bp
+	cmp bl, al
+	jnz timAdpcmEarly
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	in al, 0xD9
+timAdpcmEarly:
+	mov bp, ax
+	mov bl, al
+	call readSoftADPCM
+	cmp al, bl
+	jz timAdpcmOk
+	mov [es:expectedResult1], al
+	mov [es:testedResult1], bl
+	call printFailedResult
 	call checkKeyInput
+	xor al, 0
+	jz timAdpcmStop
+timAdpcmOk:
+
+	loop timAdpcmLoop
+timAdpcmStop:
+	hlt						; Wait for VBlank
 
 	ret
 ;-----------------------------------------------------------------------------
@@ -1805,12 +1811,10 @@ adpcmSaturationValues:
 alphabet: db "ABCDEFGHIJKLMNOPQRSTUVWXYZ!", 10, 0
 alphabet2: db "abcdefghijklmnopqrstuvwxyz.,", 10, 0
 
-headLineStr: db "  WS Karnak Tester 20250708",10, 10 , 0
+headLineStr: db "  WS Karnak Tester 20250709",10, 10 , 0
 
 menuDumpIOPortsStr: db "  Dump IO Ports.",10 , 0
 menuTestAllStr: db "  Test All.",10 , 0
-menuTestKarnakStr: db "  Karnak Dump All Values.",10 , 0
-menuTestKarnakStr2: db "  Karnak Dump All Val/reset",10 , 0
 menuTestKarnakStr3: db "  Test Karnak Table Values.",10 , 0
 menuTestKarnakStr4: db "  Test Karnak Saturation.",10 , 0
 menuTestKarnakStr5: db "  Test Karnak RND values.",10 , 0
@@ -1818,7 +1822,16 @@ menuTestKarnakStr6: db "  Test Karnak Wr 1, Rd 2.",10 , 0
 menuTestKarnakStr7: db "  Test Karnak Wr 2, Rd 1.",10 , 0
 menuTestKarnakStr8: db "  Test Karnak Wr Disabled.",10 , 0
 menuTestKarnakStr9: db "  Test Karnak Timing.",10 , 0
+menuTestKarnakStr10: db "  Karnak Dump All Values.",10 , 0
+menuTestKarnakStr11: db "  Karnak Dump All Val/reset",10 , 0
 
+testingTableStr: db "Testing Diff Table", 10, 0
+testingSaturationStr: db "Testing Saturation", 10, 0
+testingValuesStr: db "Testing Result Values", 10, 0
+testingWr1Rd2Str: db "Testing Write 1 Read 2", 10, 0
+testingWr2Rd1Str: db "Testing Write 2 Read 1", 10, 0
+testingDisabledStr: db "Testing When Disabled", 10, 0
+testingTimingStr: db "Testing Timing", 10, 0
 testingOnly0Str: db "Write only 0x0", 10, 0
 testingOnly1Str: db "Write only 0x1", 10, 0
 testingOnly2Str: db "Write only 0x2", 10, 0
@@ -1835,7 +1848,6 @@ testingOnlyCStr: db "Write only 0xC", 10, 0
 testingOnlyDStr: db "Write only 0xD", 10, 0
 testingOnlyEStr: db "Write only 0xE", 10, 0
 testingOnlyFStr: db "Write only 0xF", 10, 0
-testingTableStr: db "Checking Table", 10, 0
 
 
 test8InputStr: db "Testing Input: 0x00", 0
